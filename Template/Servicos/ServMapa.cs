@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Web;
@@ -15,62 +16,72 @@ namespace ServicoMapa.Servicos
 
     public class ServMapa : IServMapa
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
+        private readonly HttpClient _googleMapsClient;
+        private readonly HttpClient _veiculosClient;
         private readonly DataContext _dataContext;
-        private const string BaseUrl = "https://maps.googleapis.com/maps/api";
+        private readonly string _apiKey;
+        private const string GoogleMapsBaseUrl = "https://maps.googleapis.com/maps/api";
 
-        public ServMapa(
-            HttpClient httpClient,
-            IConfiguration configuration,
-            DataContext dataContext
-        )
+        private static readonly JsonSerializerOptions JsonOptions = new()
         {
-            _httpClient = httpClient;
+            PropertyNameCaseInsensitive = true
+        };
+
+        public ServMapa(IHttpClientFactory httpClientFactory, IConfiguration configuration, DataContext dataContext)
+        {
+            _googleMapsClient = httpClientFactory.CreateClient("googlemaps");
+            _veiculosClient = httpClientFactory.CreateClient("veiculos");
             _dataContext = dataContext;
-            _apiKey =
-                configuration["GoogleMaps:ApiKey"]
+            _apiKey = configuration["GoogleMaps:ApiKey"]
                 ?? throw new InvalidOperationException("GoogleMaps:ApiKey não configurada.");
         }
 
         public async Task<RoteamentoResponseDTO> BuscarRotaMaisProxima(RoteamentoRequestDTO request)
         {
-            var corporacoes = await _dataContext
-                .CorporacoesBombeiro.Where(c => c.Ativo)
-                .ToListAsync();
+            var corporacoes = await ObterCorporacoesDisponiveisAsync();
 
             if (corporacoes.Count == 0)
-                throw new InvalidOperationException("Nenhuma corporação de bombeiro cadastrada.");
+                throw new InvalidOperationException("Nenhuma corporação com viatura disponível.");
 
-            var corporacaoMaisProxima = await EncontrarMaisProxima(
-                request.LocalIncendio,
-                corporacoes
-            );
-            return await ObterDirecoes(corporacaoMaisProxima, request.LocalIncendio);
+            var (corporacao, viatura) = await EncontrarMaisProximaAsync(request.LocalIncendio, corporacoes);
+
+            await DespacharViaturaAsync(viatura.Id);
+
+            var rota = await ObterDirecoesAsync(corporacao, request.LocalIncendio);
+            rota.CorporacaoMaisProxima.Id = corporacao.Id;
+            rota.ViaturaId = viatura.Id;
+
+            await RegistrarOcorrenciaAsync(request.LocalIncendio, corporacao, viatura, rota);
+
+            return rota;
         }
 
-        private async Task<CorporacaoBombeiro> EncontrarMaisProxima(
+        private async Task<List<CorporacaoDTO>> ObterCorporacoesDisponiveisAsync()
+        {
+            var json = await _veiculosClient.GetStringAsync("/api/corporacao");
+            var todas = JsonSerializer.Deserialize<List<CorporacaoDTO>>(json, JsonOptions) ?? [];
+
+            return todas
+                .Where(c => c.Ativo && c.Viaturas.Any(v => v.Status == 0)) // 0 = DisponivelNaBase
+                .ToList();
+        }
+
+        private async Task<(CorporacaoDTO corporacao, ViaturaDTO viatura)> EncontrarMaisProximaAsync(
             LocalizacaoDTO destino,
-            List<CorporacaoBombeiro> corporacoes
-        )
+            List<CorporacaoDTO> corporacoes)
         {
             var destinoStr = FormatarCoordenada(destino.Latitude, destino.Longitude);
-            var origens = string.Join(
-                "|",
-                corporacoes.Select(c => FormatarCoordenada(c.Latitude, c.Longitude))
-            );
+            var origens = string.Join("|", corporacoes.Select(c => FormatarCoordenada(c.Latitude, c.Longitude)));
 
-            var url =
-                $"{BaseUrl}/distancematrix/json"
+            var url = $"{GoogleMapsBaseUrl}/distancematrix/json"
                 + $"?origins={HttpUtility.UrlEncode(origens)}"
                 + $"&destinations={HttpUtility.UrlEncode(destinoStr)}"
                 + $"&mode=driving"
                 + $"&language=pt-BR"
                 + $"&key={_apiKey}";
 
-            var json = await _httpClient.GetStringAsync(url);
-            var response =
-                JsonSerializer.Deserialize<DistanceMatrixResponse>(json)
+            var json = await _googleMapsClient.GetStringAsync(url);
+            var response = JsonSerializer.Deserialize<DistanceMatrixResponse>(json)
                 ?? throw new Exception("Resposta inválida da API Distance Matrix.");
 
             if (response.Status != "OK")
@@ -92,28 +103,33 @@ namespace ServicoMapa.Servicos
             if (indiceMaisProximo == -1)
                 throw new Exception("Não foi possível calcular rota para nenhuma corporação.");
 
-            return corporacoes[indiceMaisProximo];
+            var corporacao = corporacoes[indiceMaisProximo];
+            var viatura = corporacao.Viaturas.First(v => v.Status == 0);
+
+            return (corporacao, viatura);
         }
 
-        private async Task<RoteamentoResponseDTO> ObterDirecoes(
-            CorporacaoBombeiro origem,
-            LocalizacaoDTO destino
-        )
+        private async Task DespacharViaturaAsync(int viaturaId)
+        {
+            var body = new StringContent("1", Encoding.UTF8, "application/json"); // 1 = EmDeslocamento
+            var response = await _veiculosClient.PatchAsync($"/api/viatura/{viaturaId}/status", body);
+            response.EnsureSuccessStatusCode();
+        }
+
+        private async Task<RoteamentoResponseDTO> ObterDirecoesAsync(CorporacaoDTO origem, LocalizacaoDTO destino)
         {
             var origemStr = FormatarCoordenada(origem.Latitude, origem.Longitude);
             var destinoStr = FormatarCoordenada(destino.Latitude, destino.Longitude);
 
-            var url =
-                $"{BaseUrl}/directions/json"
+            var url = $"{GoogleMapsBaseUrl}/directions/json"
                 + $"?origin={HttpUtility.UrlEncode(origemStr)}"
                 + $"&destination={HttpUtility.UrlEncode(destinoStr)}"
                 + $"&mode=driving"
                 + $"&language=pt-BR"
                 + $"&key={_apiKey}";
 
-            var json = await _httpClient.GetStringAsync(url);
-            var response =
-                JsonSerializer.Deserialize<DirectionsResponse>(json)
+            var json = await _googleMapsClient.GetStringAsync(url);
+            var response = JsonSerializer.Deserialize<DirectionsResponse>(json)
                 ?? throw new Exception("Resposta inválida da API Directions.");
 
             if (response.Status != "OK")
@@ -121,15 +137,6 @@ namespace ServicoMapa.Servicos
 
             var rota = response.Routes.First();
             var trecho = rota.Legs.First();
-
-            var passos = trecho
-                .Steps.Select(s => new PassoRotaDTO
-                {
-                    Instrucao = RemoverTagsHtml(s.HtmlInstructions),
-                    Distancia = s.Distance.Text,
-                    Duracao = s.Duration.Text,
-                })
-                .ToList();
 
             return new RoteamentoResponseDTO
             {
@@ -141,9 +148,34 @@ namespace ServicoMapa.Servicos
                 },
                 DuracaoEstimada = trecho.Duration.Text,
                 DistanciaEstimada = trecho.Distance.Text,
-                Passos = passos,
+                Passos = trecho.Steps.Select(s => new PassoRotaDTO
+                {
+                    Instrucao = RemoverTagsHtml(s.HtmlInstructions),
+                    Distancia = s.Distance.Text,
+                    Duracao = s.Duration.Text,
+                }).ToList(),
                 PolylineEncoded = rota.OverviewPolyline.Points,
             };
+        }
+
+        private async Task RegistrarOcorrenciaAsync(
+            LocalizacaoDTO local,
+            CorporacaoDTO corporacao,
+            ViaturaDTO viatura,
+            RoteamentoResponseDTO rota)
+        {
+            _dataContext.OcorrenciasIncendio.Add(new OcorrenciaIncendio
+            {
+                Latitude = local.Latitude,
+                Longitude = local.Longitude,
+                DataOcorrencia = DateTime.UtcNow,
+                CorporacaoId = corporacao.Id,
+                ViaturaId = viatura.Id,
+                DuracaoEstimada = rota.DuracaoEstimada,
+                DistanciaEstimada = rota.DistanciaEstimada,
+            });
+
+            await _dataContext.SaveChangesAsync();
         }
 
         private static string FormatarCoordenada(double lat, double lng) =>

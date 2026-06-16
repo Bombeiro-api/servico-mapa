@@ -14,8 +14,14 @@ builder.Services.AddDbContext<DataContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"))
 );
 
-builder.Services.AddHttpClient<IServMapa, ServMapa>();
-builder.Services.AddScoped<IServCorporacaoBombeiro, ServCorporacaoBombeiro>();
+builder.Services.AddHttpClient("googlemaps");
+builder.Services.AddHttpClient("veiculos", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["ServicoVeiculos:BaseUrl"]
+        ?? throw new InvalidOperationException("ServicoVeiculos:BaseUrl não configurada."));
+});
+
+builder.Services.AddScoped<IServMapa, ServMapa>();
 
 GeradorDeServicos.ServiceProvider = builder.Services.BuildServiceProvider();
 

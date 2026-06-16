@@ -8,8 +8,9 @@ namespace ServicoMapa.Models
         public string Descricao { get; set; } = string.Empty;
         public DateTime DataOcorrencia { get; set; }
 
-        public int CorporacaoAtendeuId { get; set; }
-        public CorporacaoBombeiro? CorporacaoAtendeu { get; set; }
+        // IDs referencing servico-veiculos — no FK since they live in another service
+        public int CorporacaoId { get; set; }
+        public int ViaturaId { get; set; }
 
         public string DuracaoEstimada { get; set; } = string.Empty;
         public string DistanciaEstimada { get; set; } = string.Empty;
