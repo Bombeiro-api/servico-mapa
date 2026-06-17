@@ -8,7 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new() { Title = "Serviço de Mapa", Version = "v1" });
+});
 
 builder.Services.AddDbContext<DataContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"))
