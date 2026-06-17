@@ -1,8 +1,6 @@
 # Serviço de Mapa
 
-## Sobre o Projeto
-
-O Serviço de Mapa é responsável por calcular a rota mais próxima entre as corporações de bombeiros disponíveis e o local de um incêndio. Ele atua como intermediário entre o serviço de ocorrências, o serviço de veículos e a API do Google Maps.
+Microsserviço responsável por calcular a rota mais próxima entre as corporações de bombeiros disponíveis e o local de um incêndio, e por despachar a viatura adequada. Faz parte do [Sistema CAD Bombeiros](https://github.com/Bombeiro-api).
 
 ## Tecnologias Utilizadas
 
@@ -95,8 +93,6 @@ Registra um histórico de cada despacho realizado.
 
 ## Configuração
 
-### Variáveis necessárias
-
 Configure via user secrets para não expor dados sensíveis no repositório:
 
 ```powershell
@@ -118,11 +114,3 @@ Habilitar no Google Cloud Console:
 * **Models** — entidade local OcorrenciaIncendio
 * **DataContext** — comunicação com o banco de dados
 * **Migrations** — controle de versão da estrutura do banco
-
-## Portas
-
-| Serviço | Porta |
-|---|---|
-| ServicoMapa | 5089 |
-| servico-veiculos | 5091 |
-| servico-ocorrencia | 5090 |
