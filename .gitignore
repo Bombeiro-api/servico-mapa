@@ -42,4 +42,6 @@ obj/
 bin/
 migrations/
 *.db
+*.db-shm
+*.db-wal
 .vs/
