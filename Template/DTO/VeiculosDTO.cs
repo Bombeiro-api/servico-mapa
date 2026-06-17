@@ -32,7 +32,7 @@ namespace ServicoMapa.DTO
         public int Id { get; set; }
 
         [JsonPropertyName("status")]
-        public int Status { get; set; } // 0 = DisponivelNaBase, 1 = EmDeslocamento, 2 = NoLocalDaOcorrencia, 3 = EmManutencao
+        public string Status { get; set; } = string.Empty;
 
         [JsonPropertyName("corporacaoId")]
         public int CorporacaoId { get; set; }

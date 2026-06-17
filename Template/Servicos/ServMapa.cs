@@ -62,7 +62,7 @@ namespace ServicoMapa.Servicos
             var todas = JsonSerializer.Deserialize<List<CorporacaoDTO>>(json, JsonOptions) ?? [];
 
             return todas
-                .Where(c => c.Ativo && c.Viaturas.Any(v => v.Status == 0)) // 0 = DisponivelNaBase
+                .Where(c => c.Ativo && c.Viaturas.Any(v => v.Status == "DisponivelNaBase"))
                 .ToList();
         }
 
@@ -104,7 +104,7 @@ namespace ServicoMapa.Servicos
                 throw new Exception("Não foi possível calcular rota para nenhuma corporação.");
 
             var corporacao = corporacoes[indiceMaisProximo];
-            var viatura = corporacao.Viaturas.First(v => v.Status == 0);
+            var viatura = corporacao.Viaturas.First(v => v.Status == "DisponivelNaBase");
 
             return (corporacao, viatura);
         }
